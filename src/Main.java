@@ -4,6 +4,7 @@ import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.support.ui.WebDriverWait;
 
 
 public class Main {
@@ -30,7 +31,7 @@ public class Main {
 
     //Properties
     public static final String WEB_DRIVER_ID = "webdriver.chrome.driver";
-    public static final String WEB_DRIVER_PATH = "C:/workspace/KorailReservation/etc/chromedriver_win32/chromedriver.exe";
+    public static final String WEB_DRIVER_PATH = "/usr/local/bin/chromedriver";
 
     //크롤링 할 URL
     private String base_url;
@@ -44,7 +45,6 @@ public class Main {
         //Driver SetUp
         driver = new ChromeDriver();
         base_url = "https://www.letskorail.com/korail/com/login.do";
-
 
     }
 
@@ -73,16 +73,20 @@ public class Main {
 
             Thread.sleep(2000);
             WebElement s_month =(WebElement) driver.findElement(By.id("s_month"));
-            s_month.sendKeys("2");
+            s_month.sendKeys("01");
             Thread.sleep(300);
 
 
             WebElement s_day =(WebElement) driver.findElement(By.id("s_day"));
-            s_day.sendKeys("5");
+            s_day.sendKeys("21");
             Thread.sleep(300);
+            ((JavascriptExecutor) driver).executeScript("document.getElementById(\"peop01\").value =\"2\"");
+//            WebElement btn_inq = (WebElement) driver.findElement(By.className("btn_inq"));
+//            btn_inq.click();
+//            Thread.sleep(5000);
 
-            WebElement btn_inq = (WebElement) driver.findElement(By.className("btn_inq"));
-            btn_inq.click();
+            WebElement pep =(WebElement) driver.findElement(By.id("peop01"));
+
             Thread.sleep(300);
 
 
@@ -96,25 +100,29 @@ public class Main {
             get.sendKeys("대전");
             Thread.sleep(300);
 
+
             WebElement s_hour =(WebElement) driver.findElement(By.id("s_hour"));
-            s_hour.sendKeys("18");
-            Thread.sleep(300);
+            s_hour.sendKeys("11");
+            Thread.sleep(3000);
 
             WebElement btn_inq2 = (WebElement) driver.findElement(By.className("btn_inq"));
             btn_inq2.click();
-            Thread.sleep(300);
 
+
+            Thread.sleep(5000);
             JavascriptExecutor exe2 = (JavascriptExecutor)driver;
             exe2.executeScript("inqSchedule()");
-
+            Thread.sleep(300);
             String str = "";
             int first = 0;
             int last = 0;
+            WebDriverWait webDriverWait = new WebDriverWait(driver,30);
             while(true){
                 Thread.sleep(3000);
                 exe2.executeScript("inqSchedule()");
 
-                Thread.sleep(500);
+                webDriverWait.until(ExpectedConditions.presenceOfElementLocated(By.id("tableResult")));
+
                 str = driver.getPageSource();
 
                 first = str.indexOf("<table id=\"tableResult\"");
