@@ -3,170 +3,235 @@ import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.chrome.ChromeDriver;
+import org.openqa.selenium.chrome.ChromeOptions;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 
+import java.time.Duration;
+import java.util.List;
 
 public class Main {
+
+    // ===================== 설정값 (여기만 수정) =====================
+    private static final String USER_ID   = "";         // 코레일 회원 아이디
+    private static final String USER_PWD  = "";         // 코레일 비밀번호
+    private static final String DEPARTURE = "영등포";   // 출발역
+    private static final String ARRIVAL   = "대전";     // 도착역
+    private static final String YEAR      = "2026";
+    private static final String MONTH     = "05";       // MM
+    private static final String DAY       = "21";       // DD
+    private static final String HOUR      = "11";       // 출발 시간 (00~23)
+    private static final int    RETRY_INTERVAL_MS = 3000; // 재시도 간격 (밀리초)
+    // ==============================================================
+
+    private static final String LOGIN_URL  = "https://www.korail.com/";
+    private static final String SEARCH_URL = "https://www.korail.com/ticket/search/list";
+
+    private final WebDriver    driver;
+    private final WebDriverWait wait;
+
     public static void main(String[] args) {
         Main main = new Main();
-        while (true){
-            try {
-                main.crawl();
-            }catch (Exception e){
-                main.crawl();
-            }
+        try {
+            main.login();
+            main.searchAndMonitor();
+        } catch (Exception e) {
+            e.printStackTrace();
         }
-
-
-
-
-
-
     }
-
-
-    //WebDriver
-    private WebDriver driver;
-
-    //Properties
-    public static final String WEB_DRIVER_ID = "webdriver.chrome.driver";
-    public static final String WEB_DRIVER_PATH = "/usr/local/bin/chromedriver";
-
-    //크롤링 할 URL
-    private String base_url;
 
     public Main() {
-        super();
+        // Windows용 chromedriver 경로 (필요시 수정)
+        System.setProperty("webdriver.chrome.driver", "etc/chromedriver_win32/chromedriver.exe");
 
-        //System Property SetUp
-        System.setProperty(WEB_DRIVER_ID, WEB_DRIVER_PATH);
+        ChromeOptions options = new ChromeOptions();
+        // options.addArguments("--headless=new"); // 백그라운드 실행 시 주석 해제
+        options.addArguments("--no-sandbox");
+        options.addArguments("--disable-dev-shm-usage");
+        options.addArguments("--disable-blink-features=AutomationControlled");
+        options.setExperimentalOption("excludeSwitches", new String[]{"enable-automation"});
 
-        //Driver SetUp
-        driver = new ChromeDriver();
-        base_url = "https://www.letskorail.com/korail/com/login.do";
-
+        driver = new ChromeDriver(options);
+        driver.manage().window().maximize();
+        wait = new WebDriverWait(driver, Duration.ofSeconds(30));
     }
 
-    public void crawl() {
+    /** 코레일 로그인 */
+    private void login() throws InterruptedException {
+        driver.get(LOGIN_URL);
+        Thread.sleep(2000);
 
+        // 로그인 버튼(헤더) 클릭 → 로그인 페이지 이동
+        // TODO: F12 > Elements에서 '로그인' 링크 셀렉터 확인 후 수정
+        WebElement loginLink = wait.until(ExpectedConditions.elementToBeClickable(
+                By.xpath("//a[contains(text(),'로그인')] | //button[contains(text(),'로그인')]")));
+        loginLink.click();
+        Thread.sleep(2000);
+
+        // 아이디 입력
+        // TODO: F12 > Elements에서 아이디 input의 id/name 확인 후 수정
+        WebElement idField = wait.until(ExpectedConditions.presenceOfElementLocated(
+                By.cssSelector("input[name='memberId'], input[id='memberId'], input[name='usrId'], input[id='usrId']")));
+        idField.clear();
+        idField.sendKeys(USER_ID);
+        Thread.sleep(300);
+
+        // 비밀번호 입력
+        // TODO: F12 > Elements에서 비밀번호 input의 id/name 확인 후 수정
+        WebElement pwdField = driver.findElement(
+                By.cssSelector("input[type='password'][name='memberPw'], input[type='password'][id='memberPw'], input[type='password']"));
+        pwdField.clear();
+        pwdField.sendKeys(USER_PWD);
+        Thread.sleep(300);
+
+        // 로그인 버튼 클릭
+        WebElement loginBtn = driver.findElement(
+                By.cssSelector("button[type='submit'], .btn_login, #loginBtn"));
+        loginBtn.click();
+        Thread.sleep(3000);
+
+        System.out.println("로그인 완료");
+    }
+
+    /** 승차권 조회 후 취소표 모니터링 */
+    private void searchAndMonitor() throws InterruptedException {
+        driver.get(SEARCH_URL);
+        Thread.sleep(2000);
+
+        fillSearchForm();
+        clickSearchButton();
+
+        System.out.println("취소표 모니터링 시작...");
+        monitorAndReserve();
+    }
+
+    /** 조회 폼 입력 */
+    private void fillSearchForm() throws InterruptedException {
+        JavascriptExecutor js = (JavascriptExecutor) driver;
+
+        // 출발역
+        // TODO: F12에서 출발역 input의 id 확인 (예: txtGoStart, dptRsStnNm 등)
+        WebElement depField = wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("#txtGoStart, input[placeholder*='출발역'], input[placeholder*='출발']")));
+        depField.clear();
+        depField.sendKeys(DEPARTURE);
+        Thread.sleep(500);
+        // 자동완성 팝업에서 첫 번째 항목 선택
+        selectFirstAutoComplete();
+
+        // 도착역
+        WebElement arrField = driver.findElement(
+                By.cssSelector("#txtGoEnd, input[placeholder*='도착역'], input[placeholder*='도착']"));
+        arrField.clear();
+        arrField.sendKeys(ARRIVAL);
+        Thread.sleep(500);
+        selectFirstAutoComplete();
+
+        // 날짜 설정 (JavaScript로 직접 value 주입 후 change 이벤트 발생)
+        // TODO: F12에서 날짜 input의 id 확인
+        String dateValue = YEAR + MONTH + DAY;
+        js.executeScript(
+            "var el = document.querySelector('#dtGoStart, input[name*=\"date\"], input[id*=\"date\"]');" +
+            "if(el){ el.value='" + dateValue + "'; el.dispatchEvent(new Event('change', {bubbles:true})); }"
+        );
+        Thread.sleep(300);
+
+        // 시간 설정
+        // TODO: F12에서 시간 select/input의 id 확인
+        js.executeScript(
+            "var el = document.querySelector('#tmGoStart, select[name*=\"hour\"], select[id*=\"hour\"]');" +
+            "if(el){ el.value='" + HOUR + "'; el.dispatchEvent(new Event('change', {bubbles:true})); }"
+        );
+        Thread.sleep(300);
+
+        System.out.println("검색 조건 입력 완료: " + DEPARTURE + " → " + ARRIVAL + " (" + dateValue + " " + HOUR + "시)");
+    }
+
+    /** 자동완성 팝업 첫 번째 항목 클릭 */
+    private void selectFirstAutoComplete() {
         try {
-            //get page (= 브라우저에서 url을 주소창에 넣은 후 request 한 것과 같다)
-            driver.get(base_url);
-            //System.out.println(driver.getPageSource());
+            Thread.sleep(800);
+            WebElement firstItem = new WebDriverWait(driver, Duration.ofSeconds(3))
+                    .until(ExpectedConditions.elementToBeClickable(
+                            By.cssSelector(".autocomplete li:first-child, .station-list li:first-child, ul[role='listbox'] li:first-child")));
+            firstItem.click();
+        } catch (Exception ignored) {
+            // 자동완성이 없으면 그냥 진행
+        }
+    }
 
-            Thread.sleep(300);
-            WebElement id =(WebElement) driver.findElement(By.id("txtMember"));
-            id.sendKeys("");
-            Thread.sleep(300);
-            WebElement pwd =(WebElement) driver.findElement(By.id("txtPwd"));
-            pwd.sendKeys("");
-            Thread.sleep(300);
+    /** 조회 버튼 클릭 */
+    private void clickSearchButton() throws InterruptedException {
+        // TODO: F12에서 조회 버튼의 id/class 확인
+        WebElement searchBtn = wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("#btnSearch, .btn_search, button[type='submit'], .search-btn")));
+        searchBtn.click();
+        Thread.sleep(3000);
+        System.out.println("열차 조회 완료");
+    }
 
-            WebElement btn_login = (WebElement) driver.findElement(By.className("btn_login"));
-            btn_login.click();
-            Thread.sleep(10000);
+    /** 취소표 모니터링 루프 */
+    private void monitorAndReserve() throws InterruptedException {
+        while (true) {
+            try {
+                Thread.sleep(RETRY_INTERVAL_MS);
 
-            JavascriptExecutor exe = (JavascriptExecutor)driver;
-            exe.executeScript("m_menuPrd1_1_1_link()");
+                // 조회 결과 새로고침 (조회 버튼 재클릭 또는 navigate refresh)
+                clickSearchButton();
 
+                // 결과 로드 대기
+                // TODO: F12에서 열차 목록 컨테이너의 셀렉터 확인
+                wait.until(ExpectedConditions.presenceOfElementLocated(
+                        By.cssSelector(".tbl_train_list, .train-list, #tableResult, .result-list")));
 
-            Thread.sleep(2000);
-            WebElement s_month =(WebElement) driver.findElement(By.id("s_month"));
-            s_month.sendKeys("01");
-            Thread.sleep(300);
+                // "예약하기" 버튼 탐색 (매진이 아닌 열차)
+                List<WebElement> reserveBtns = driver.findElements(
+                        By.xpath("//button[contains(text(),'예약하기')] | //a[contains(text(),'예약하기')] | " +
+                                 "//button[contains(@class,'btn_reservation')] | //a[contains(@class,'btn_reservation')]"));
 
-
-            WebElement s_day =(WebElement) driver.findElement(By.id("s_day"));
-            s_day.sendKeys("21");
-            Thread.sleep(300);
-            ((JavascriptExecutor) driver).executeScript("document.getElementById(\"peop01\").value =\"2\"");
-//            WebElement btn_inq = (WebElement) driver.findElement(By.className("btn_inq"));
-//            btn_inq.click();
-//            Thread.sleep(5000);
-
-            WebElement pep =(WebElement) driver.findElement(By.id("peop01"));
-
-            Thread.sleep(300);
-
-
-            WebElement start =(WebElement) driver.findElement(By.id("start"));
-            start.clear();
-            start.sendKeys("영등포");
-            Thread.sleep(300);
-
-            WebElement get =(WebElement) driver.findElement(By.id("get"));
-            get.clear();
-            get.sendKeys("대전");
-            Thread.sleep(300);
-
-
-            WebElement s_hour =(WebElement) driver.findElement(By.id("s_hour"));
-            s_hour.sendKeys("11");
-            Thread.sleep(3000);
-
-            WebElement btn_inq2 = (WebElement) driver.findElement(By.className("btn_inq"));
-            btn_inq2.click();
-
-
-            Thread.sleep(5000);
-            JavascriptExecutor exe2 = (JavascriptExecutor)driver;
-            exe2.executeScript("inqSchedule()");
-            Thread.sleep(300);
-            String str = "";
-            int first = 0;
-            int last = 0;
-            WebDriverWait webDriverWait = new WebDriverWait(driver,30);
-            while(true){
-                Thread.sleep(3000);
-                exe2.executeScript("inqSchedule()");
-
-                webDriverWait.until(ExpectedConditions.presenceOfElementLocated(By.id("tableResult")));
-
-                str = driver.getPageSource();
-
-                first = str.indexOf("<table id=\"tableResult\"");
-                last = str.indexOf("</tbody></table>");
-                System.out.println("first = " + first);
-                System.out.println("last = " + last);
-                if(first == -1) continue;
-                str = str.substring(first,last);
-
-                System.out.println(str);
-
-                if(str.indexOf("예약하기")>0){
+                if (!reserveBtns.isEmpty()) {
+                    System.out.println("취소표 발견! 예약 시도...");
+                    reserveBtns.get(0).click();
+                    Thread.sleep(2000);
+                    handleAlertIfPresent();
+                    confirmReservation();
                     break;
                 }
+
+                System.out.println("[" + java.time.LocalTime.now() + "] 매진. 재시도 중...");
+
+            } catch (Exception e) {
+                System.out.println("오류 발생, 재시도: " + e.getMessage());
             }
-
-            String xpath = "//*[contains(@src,'icon_apm_rd.gif')]";
-            WebElement el = (WebElement) driver.findElement(By.xpath(xpath));
-            el.click();
-
-            String thtml ="";
-            if(ExpectedConditions.alertIsPresent().apply(driver)==null){
-                //알림창이 없으면 아무것도 하지 말것
-            }else{
-                //알림창이 존재하면 알림창 확인을 누를것
-                driver.switchTo().alert().accept();
-            }
-
-
-
-            Thread.sleep(300000);
-
-
-
-        } catch (Exception e) {
-
-            e.printStackTrace();
-
-        } finally {
-
-            driver.close();
         }
-
     }
 
-}
+    /** 브라우저 alert 처리 */
+    private void handleAlertIfPresent() {
+        try {
+            new WebDriverWait(driver, Duration.ofSeconds(2))
+                    .until(ExpectedConditions.alertIsPresent());
+            driver.switchTo().alert().accept();
+            Thread.sleep(1000);
+        } catch (Exception ignored) {}
+    }
 
+    /** 예약 확인/결제 페이지 처리 */
+    private void confirmReservation() throws InterruptedException {
+        Thread.sleep(2000);
+        try {
+            // TODO: F12에서 예약 확인 버튼 셀렉터 확인
+            WebElement confirmBtn = wait.until(ExpectedConditions.elementToBeClickable(
+                    By.xpath("//button[contains(text(),'결제하기')] | //button[contains(text(),'예약확인')] | " +
+                             "//a[contains(text(),'결제하기')] | //button[contains(text(),'확인')]")));
+            confirmBtn.click();
+            System.out.println("예약 완료! 결제 페이지로 이동했습니다. 5분 안에 결제를 완료하세요.");
+        } catch (Exception e) {
+            System.out.println("예약 확인 버튼을 찾지 못했습니다. 수동으로 처리하세요: " + e.getMessage());
+        }
+
+        // 결제를 위해 브라우저 열어둠 (5분)
+        Thread.sleep(300_000);
+        driver.quit();
+    }
+}
